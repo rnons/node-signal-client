@@ -274,8 +274,6 @@ let Item = Model.extend({
   let accountManager;
   window.getAccountManager = () => {
     if (!accountManager) {
-
-    if (!accountManager) {
       const OLD_USERNAME = storage.get('number_id');
       const USERNAME = storage.get('uuid_id');
       const PASSWORD = storage.get('password');
