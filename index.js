@@ -651,7 +651,36 @@ async function onSentMessage(event) {
     });
     return;
   }
+  function createSentMessage(data) {
+    const now = Date.now();
+    let sentTo = [];
 
+    if (data.unidentifiedStatus && data.unidentifiedStatus.length) {
+      sentTo = data.unidentifiedStatus.map(item => item.destination);
+      const unidentified = _.filter(data.unidentifiedStatus, item =>
+        Boolean(item.unidentified)
+      );
+      // eslint-disable-next-line no-param-reassign
+      data.unidentifiedDeliveries = unidentified.map(item => item.destination);
+    }
+
+    return new Whisper.Message({
+      source: textsecure.storage.user.getNumber(),
+      sourceUuid: textsecure.storage.user.getUuid(),
+      sourceDevice: data.device,
+      sent_at: data.timestamp,
+      sent_to: sentTo,
+      received_at: now,
+      conversationId: data.destination,
+      type: 'outgoing',
+      sent: true,
+      unidentifiedDeliveries: data.unidentifiedDeliveries || [],
+      expirationStartTimestamp: Math.min(
+        data.expirationStartTimestamp || data.timestamp || Date.now(),
+        Date.now()
+      ),
+    });
+  }
   const message = await createSentMessage(data);
   const existing = await getExistingMessage(message);
   const isUpdate = Boolean(data.isRecipientUpdate);
@@ -736,6 +765,12 @@ async function handleMessageSentProfileUpdate({
     id: group.id,
   });
 
+  // Matches event data from `libtextsecure` `MessageReceiver::handleSentMessage`:
+  window.getDescriptorForSent = ({ message, destination }) =>
+    message.group
+      ? getGroupDescriptor(message.group)
+      : { type: Message.PRIVATE, id: destination };
+    
   // Matches event data from `libtextsecure` `MessageReceiver::handleDataMessage`:
   window.getDescriptorForReceived = ({ message, source }) =>
     message.group
