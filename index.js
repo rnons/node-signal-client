@@ -277,11 +277,20 @@ let Item = Model.extend({
       const OLD_USERNAME = storage.get('number_id');
       const USERNAME = storage.get('uuid_id');
       const PASSWORD = storage.get('password');
-      accountManager = new textsecure.AccountManager(USERNAME || OLD_USERNAME, PASSWORD);
+      accountManager = new textsecure.AccountManager(
+        USERNAME || OLD_USERNAME,
+        PASSWORD
+      );
       accountManager.addEventListener('registration', () => {
+        const ourNumber = textsecure.storage.user.getNumber();
+        const ourUuid = textsecure.storage.user.getUuid();
         const user = {
           regionCode: window.storage.get('regionCode'),
-          ourNumber: textsecure.storage.user.getNumber(),
+          ourNumber,
+          ourUuid,
+          ourConversationId: ConversationController.getConversationId(
+            ourNumber || ourUuid
+          ),
         };
         Whisper.events.trigger('userChanged', user);
 
