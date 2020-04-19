@@ -177,8 +177,8 @@ window.getGuid = require('uuid/v4');
 
 window.addEventListener = Whisper.events.on;
 
-const WebCrypto = require("node-webcrypto-ossl");
-window.crypto = new WebCrypto();
+const { Crypto } = require("webcrypto");
+window.crypto = new Crypto();
 
 window.dcodeIO = {}
 dcodeIO.Long = signalRequire('components/long/dist/Long');
@@ -248,9 +248,12 @@ let Item = Model.extend({
   let accountManager;
   window.getAccountManager = () => {
     if (!accountManager) {
-      const USERNAME = storage.get('number_id');
+
+    if (!accountManager) {
+      const OLD_USERNAME = storage.get('number_id');
+      const USERNAME = storage.get('uuid_id');
       const PASSWORD = storage.get('password');
-      accountManager = new textsecure.AccountManager(USERNAME, PASSWORD);
+      accountManager = new textsecure.AccountManager(USERNAME || OLD_USERNAME, PASSWORD);
       accountManager.addEventListener('registration', () => {
         const user = {
           regionCode: window.storage.get('regionCode'),
@@ -831,12 +834,13 @@ Whisper.events.on('storage_ready', () => {
       serverTrustRoot: window.getServerTrustRoot(),
     };
 
-    const USERNAME = storage.get('number_id');
+    const OLD_USERNAME = storage.get('number_id');
+    const USERNAME = storage.get('uuid_id');
     const PASSWORD = storage.get('password');
 
     // initialize the socket and start listening for messages
     messageReceiver = new textsecure.MessageReceiver(
-      USERNAME, PASSWORD, undefined, options
+      OLD_USERNAME, USERNAME, PASSWORD, undefined, options
     );
 
     // Proxy all the events to the client emitter
@@ -863,7 +867,7 @@ Whisper.events.on('storage_ready', () => {
     this.matrixEmitter.on('typing', onTyping);
 
     window.textsecure.messaging = new textsecure.MessageSender(
-      USERNAME, PASSWORD
+      USERNAME || OLD_USERNAME, PASSWORD
     ); 
     Whisper.RotateSignedPreKeyListener.init(Whisper.events);
     window.Signal.RefreshSenderCertificate.initialize({
