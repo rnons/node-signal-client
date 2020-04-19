@@ -951,9 +951,9 @@ Whisper.events.on('storage_ready', () => {
   } else {
 
     if (messageReceiver) {
-      await messageReceiver.stopProcessing();
+      messageReceiver.stopProcessing();
 
-      await window.waitForAllBatchers();
+      window.waitForAllBatchers();
       messageReceiver.unregisterBatchers();
 
       messageReceiver = null;
@@ -1018,7 +1018,7 @@ Whisper.events.on('storage_ready', () => {
         password: PASSWORD,
       });
       try {
-        await server.registerSupportForUnauthenticatedDelivery();
+        server.registerSupportForUnauthenticatedDelivery();
         storage.put(udSupportKey, true);
       } catch (error) {
         window.log.error(
@@ -1038,7 +1038,7 @@ Whisper.events.on('storage_ready', () => {
         password: PASSWORD,
       });
       try {
-        await server.registerCapabilities({ uuid: true });
+        server.registerCapabilities({ uuid: true });
         storage.put(hasRegisteredUuidSupportKey, true);
       } catch (error) {
         window.log.error(
