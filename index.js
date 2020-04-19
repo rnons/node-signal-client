@@ -414,12 +414,12 @@ async function getStorageReady() {
         return;
       }
 
-      conversation.notifyTyping({
-        isTyping: started,
-        sender,
-        senderUuid,
-        senderDevice,
-      });
+//       conversation.notifyTyping({
+//         isTyping: started,
+//         sender,
+//         senderUuid,
+//         senderDevice,
+//       });
     }
   }
 
@@ -547,16 +547,16 @@ async function getStorageReady() {
           identityKey: verified.identityKey.toArrayBuffer(),
         };
         verifiedEvent.viaContactSync = true;
-        await onVerified(verifiedEvent);
+//         await onVerified(verifiedEvent);
       }
 
-      const { appView } = window.owsDesktopApp;
-      if (appView && appView.installView && appView.installView.didLink) {
-        window.log.info(
-          'onContactReceived: Adding the message history disclaimer on link'
-        );
-        await conversation.addMessageHistoryDisclaimer();
-      }
+//       const { appView } = window.owsDesktopApp;
+//       if (appView && appView.installView && appView.installView.didLink) {
+//         window.log.info(
+//           'onContactReceived: Adding the message history disclaimer on link'
+//         );
+//         await conversation.addMessageHistoryDisclaimer();
+//       }
     } catch (error) {
       window.log.error('onContactReceived error:', Errors.toLogFormat(error));
     }
@@ -631,13 +631,13 @@ async function getStorageReady() {
 
     window.Signal.Data.updateConversation(id, conversation.attributes);
 
-    const { appView } = window.owsDesktopApp;
-    if (appView && appView.installView && appView.installView.didLink) {
-      window.log.info(
-        'onGroupReceived: Adding the message history disclaimer on link'
-      );
-      await conversation.addMessageHistoryDisclaimer();
-    }
+//     const { appView } = window.owsDesktopApp;
+//     if (appView && appView.installView && appView.installView.didLink) {
+//       window.log.info(
+//         'onGroupReceived: Adding the message history disclaimer on link'
+//       );
+//       await conversation.addMessageHistoryDisclaimer();
+//     }
     const { expireTimer } = details;
     const isValidExpireTimer = typeof expireTimer === 'number';
     if (!isValidExpireTimer) {
@@ -969,9 +969,6 @@ Whisper.events.on('storage_ready', () => {
       retryCached: connectCount === 1,
       serverTrustRoot: window.getServerTrustRoot(),
     };
-
-    Whisper.deliveryReceiptQueue.pause(); // avoid flood of delivery receipts until we catch up
-    Whisper.Notifications.disable(); // avoid notification flood until empty
 
     // initialize the socket and start listening for messages
     window.log.info('Initializing socket and listening for messages');
