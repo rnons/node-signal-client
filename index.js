@@ -1045,29 +1045,29 @@ Whisper.events.on('storage_ready', () => {
       }
     }
 
-    const deviceId = textsecure.storage.user.getDeviceId();
+//    const deviceId = textsecure.storage.user.getDeviceId();
 
-    if (!textsecure.storage.user.getUuid()) {
-      const server = WebAPI.connect({
-        username: OLD_USERNAME,
-        password: PASSWORD,
-      });
-      try {
-        const { uuid } = server.whoami();
-        textsecure.storage.user.setUuidAndDeviceId(uuid, deviceId);
-        const ourNumber = textsecure.storage.user.getNumber();
-        const me = ConversationController.getOrCreateAndWait(
-          ourNumber,
-          'private'
-        );
-        me.updateUuid(uuid);
-      } catch (error) {
-        window.log.error(
-          'Error: Unable to retrieve UUID from service.',
-          error && error.stack ? error.stack : error
-        );
-      }
-    }
+//    if (!textsecure.storage.user.getUuid()) {
+//      const server = WebAPI.connect({
+//        username: OLD_USERNAME,
+//        password: PASSWORD,
+//      });
+//      try {
+//        const { uuid } = server.whoami();
+//        textsecure.storage.user.setUuidAndDeviceId(uuid, deviceId);
+//        const ourNumber = textsecure.storage.user.getNumber();
+//        const me = ConversationController.getOrCreateAndWait(
+//          ourNumber,
+//          'private'
+//        );
+//        me.updateUuid(uuid);
+//      } catch (error) {
+//        window.log.error(
+//          'Error: Unable to retrieve UUID from service.',
+//          error && error.stack ? error.stack : error
+//        );
+//      }
+//    }
     
     Whisper.RotateSignedPreKeyListener.init(Whisper.events);
     window.Signal.RefreshSenderCertificate.initialize({
