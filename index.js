@@ -1056,10 +1056,10 @@ Whisper.events.on('storage_ready', () => {
         password: PASSWORD,
       });
       try {
-        const { uuid } = await server.whoami();
+        const { uuid } = server.whoami();
         textsecure.storage.user.setUuidAndDeviceId(uuid, deviceId);
         const ourNumber = textsecure.storage.user.getNumber();
-        const me = await ConversationController.getOrCreateAndWait(
+        const me = ConversationController.getOrCreateAndWait(
           ourNumber,
           'private'
         );
