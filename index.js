@@ -103,6 +103,31 @@ window.i18n = function(locale, messages) {
   return '';
 }
 
+window.isValidGuid = maybeGuid =>
+  /^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i.test(
+    maybeGuid
+  );
+// https://stackoverflow.com/a/23299989
+window.isValidE164 = maybeE164 => /^\+?[1-9]\d{1,14}$/.test(maybeE164);
+
+window.normalizeUuids = (obj, paths, context) => {
+  if (!obj) {
+    return;
+  }
+  paths.forEach(path => {
+    const val = _.get(obj, path);
+    if (val) {
+      if (!window.isValidGuid(val)) {
+        window.log.warn(
+          `Normalizing invalid uuid: ${val} at path ${path} in context "${context}"`
+        );
+      }
+      _.set(obj, path, val.toLowerCase());
+    }
+  });
+};
+
+
 window.PROTO_ROOT = signalDesktopRoot + '/protos';
 // need this to avoid opaque origin error in indexeddb shim
 window.location = {
