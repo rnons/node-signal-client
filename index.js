@@ -203,8 +203,8 @@ window.getGuid = require('uuid/v4');
 
 window.addEventListener = Whisper.events.on;
 
-const { Crypto } = require("node-webcrypto-ossl");
-window.crypto = new Crypto();
+const WebCrypto = require("node-webcrypto-ossl");
+window.crypto = new WebCrypto();
 
 window.dcodeIO = {}
 dcodeIO.Long = signalRequire('components/long/dist/Long');
