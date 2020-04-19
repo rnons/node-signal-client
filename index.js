@@ -246,6 +246,7 @@ signalRequire('ts/util/registration');
 //  signalRequire('js/expire');
 signalRequire('js/conversation_controller');
 signalRequire('js/message_controller');
+signalRequire('js/reactions');
 
 signalRequire('js/wall_clock_listener');
 signalRequire('js/rotate_signed_prekey_listener');
@@ -1045,29 +1046,29 @@ Whisper.events.on('storage_ready', () => {
       }
     }
 
-//    const deviceId = textsecure.storage.user.getDeviceId();
-
-//    if (!textsecure.storage.user.getUuid()) {
-//      const server = WebAPI.connect({
-//        username: OLD_USERNAME,
-//        password: PASSWORD,
-//      });
-//      try {
-//        const { uuid } = server.whoami();
-//        textsecure.storage.user.setUuidAndDeviceId(uuid, deviceId);
-//        const ourNumber = textsecure.storage.user.getNumber();
-//        const me = ConversationController.getOrCreateAndWait(
-//          ourNumber,
-//          'private'
-//        );
-//        me.updateUuid(uuid);
-//      } catch (error) {
-//        window.log.error(
-//          'Error: Unable to retrieve UUID from service.',
-//          error && error.stack ? error.stack : error
-//        );
-//      }
-//    }
+//     const deviceId = textsecure.storage.user.getDeviceId();
+// 
+//     if (!textsecure.storage.user.getUuid()) {
+//       const server = WebAPI.connect({
+//         username: OLD_USERNAME,
+//         password: PASSWORD,
+//       });
+//       try {
+//         const { uuid } = server.whoami();
+//         textsecure.storage.user.setUuidAndDeviceId(uuid, deviceId);
+//         const ourNumber = textsecure.storage.user.getNumber();
+//         const me = ConversationController.getOrCreateAndWait(
+//           ourNumber,
+//           'private'
+//         );
+//         me.updateUuid(uuid);
+//       } catch (error) {
+//         window.log.error(
+//           'Error: Unable to retrieve UUID from service.',
+//           error && error.stack ? error.stack : error
+//         );
+//       }
+//     }
     
     Whisper.RotateSignedPreKeyListener.init(Whisper.events);
     window.Signal.RefreshSenderCertificate.initialize({
@@ -1079,6 +1080,19 @@ Whisper.events.on('storage_ready', () => {
     Whisper.ExpiringMessagesListener.init(Whisper.events);
 
     window.document = {};
+    
+    //Redux actions are not needed for our use case but to stop warnings:
+    const actions = {};
+    window.reduxActions = actions;
+    actions.conversations = {};
+    actions.emojis = {};
+    actions.expiration = {};
+    actions.items = {};
+    actions.network = {};
+    actions.updates = {};
+    actions.user = {};
+    actions.search = {};
+    actions.stickers = {};
 
     return Promise.resolve(this.matrixEmitter);
   }
