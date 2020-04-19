@@ -97,6 +97,7 @@ const {
   upgradeMessageSchema,
   writeNewAttachmentData,
   deleteAttachmentData,
+  doesAttachmentExist,
 } = window.Signal.Migrations;
 
 window.i18n = function(locale, messages) {
@@ -471,6 +472,7 @@ async function onContactReceived(ev) {
         {
           writeNewAttachmentData,
           deleteAttachmentData,
+          doesAttachmentExist,
         }
       );
       conversation.set(newAttributes);
@@ -555,6 +557,7 @@ async function onGroupReceived(ev) {
       {
         writeNewAttachmentData,
         deleteAttachmentData,
+        doesAttachmentExist,
       }
     );
     conversation.set(newAttributes);
