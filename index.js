@@ -1114,9 +1114,9 @@ async function getStorageReady() {
   }
 
   const sqlInitPromise = sql.initialize({
-    configDir: userDataPath,
+    configDir: process.cwd() + '/data/',
     key,
-    messages: locale.messages,
+    messages: {},
   });
   const success = await sqlInitPromise;
 
