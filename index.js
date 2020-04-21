@@ -1127,12 +1127,13 @@ async function getStorageReady() {
   await sqlChannels.initialize();
 //ENDFROM
   
+  window.log.info('Storage fetch');
+  await storage.fetch();
   try {
     await Promise.all([
       ConversationController.load(),
       textsecure.storage.protocol.hydrateCaches(),
     ]);
-    await storage.fetch();
   } catch (error) {
     window.log.error(
       'background.js: ConversationController failed to load:',
