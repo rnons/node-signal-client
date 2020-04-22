@@ -960,6 +960,9 @@ Whisper.events.on('storage_ready', () => {
     actions.search = {};
     actions.stickers = {};
     
+    //Needed to be able to send messages:
+    actions.conversations.clearUnreadMetrics = function() {};
+    actions.conversations.messagesAdded = function() {};
     
     //This is so we can wait for everything as otherwise the async functions end to fast
     //This screws everything up as e.g. the uuid is not loaded before continuing
