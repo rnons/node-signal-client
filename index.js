@@ -136,6 +136,13 @@ window.i18n = function(locale, messages) {
 
 //FROM: background.js
 
+//Needed for conversation sendMessage
+let activeTimestamp = Date.now();
+const ACTIVE_TIMEOUT = 15 * 1000;
+window.isActive = () => {
+  const now = Date.now();
+  return now <= activeTimestamp + ACTIVE_TIMEOUT;
+};
 
 const { Errors, Message } = window.Signal.Types;
 const {
@@ -1227,47 +1234,32 @@ class SignalClient extends EventEmitter {
     textsecure.messaging.sendTypingMessage(payload,{}); 
   }
 
+  //TODO: Merge together as no need to differentiate them from a signal point of view
   async sendMessageToGroup(groupId, message, members, attachments = []) {
     let timeStamp = await new Date().getTime();
     let conversation = await ConversationController.getOrCreateAndWait(groupId, 'group');
-    let timer = await conversation.get('expireTimer');
-    let expireTimer = timer ? timer : 0;
-    let result = await textsecure.messaging.sendMessageToGroup(
-      groupId,
-      members,
+    await conversation.sendMessage(
       message,
       attachments,
-      null,
-      [],
-      undefined,
-      timeStamp,
-      expireTimer,
-      undefined,
-      {}
+      null,           //quote
+      [],             //preview
+      null            //sticker
     );
-    await textsecure.messaging.sendSyncMessage(result.dataMessage, timeStamp, groupId, expireTimer);
-    return {timestamp: timeStamp, numbers: result.successfulNumbers};
+    return {timestamp: timeStamp, numbers: members};
   }
 
   async sendMessage(phoneNumber, message, attachments = []) {
     let timeStamp = await new Date().getTime();
     let conversation = await ConversationController.getOrCreateAndWait(phoneNumber, 'private');
-    let timer = await conversation.get('expireTimer');
-    let expireTimer = timer ? timer : 0;
-    let result = await textsecure.messaging.sendMessageToNumber(
-      phoneNumber,
+    await conversation.sendMessage(
       message,
       attachments,
-      null,
-      [],
-      undefined,
-      timeStamp,
-      expireTimer,
-      undefined,
-      {}
+      null,           //quote
+      [],             //preview
+      null            //sticker
     );
-    await textsecure.messaging.sendSyncMessage(result.dataMessage, timeStamp, phoneNumber, expireTimer);
-    return {timestamp: timeStamp, numbers: result.successfulNumbers};
+    //TODO: remove need for number for mapping to be able to remove this
+    return {timestamp: timeStamp, numbers: phoneNumber};
   }
 }
 
