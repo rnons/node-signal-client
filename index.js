@@ -1210,31 +1210,32 @@ class SignalClient extends EventEmitter {
 
   /**
    * mark messages as read in your signal clients
-   * @param {Object[]} reads contains timestamps and sender of messages to mark as read 
    */
-  syncReadMessages(reads) {
-    return textsecure.messaging.syncReadMessages(reads);
-  }
-
-  /**
-   * send read receipts for messages to your contacts
-   * @param {string} sender sender of the message(s)
-   * @param {Number[]} reads timestamps of messages
-   */
-  sendReadReceipts(sender,reads) {
-    if(sender == null) {
-      return;
+  async syncReadReceipts(conversationId, isGroup, timeStamp, sendReceipts) {
+    let conversation;
+    if (isGroup) {
+      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');
     }
-    textsecure.messaging.sendReadReceipts(sender, reads, {}); 
+    else { 
+      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
+    }
+    
+    await conversation.markRead(timeStamp, {sendReadReceipts: sendReceipts, readAt: timeStamp });
   }
 
     /**
    * send typing events to your contacts
-   * @param {string} sender sender of the message(s)
-   * @param {Number[]} reads timestamps of messages
    */
-  sendTypingMessage(payload) {
-    textsecure.messaging.sendTypingMessage(payload,{}); 
+  async sendTypingMessage(conversationId, isGroup, status) {
+    let conversation;
+    if (isGroup) {
+      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');
+    }
+    else { 
+      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
+    }
+    
+    await conversation.sendTypingMessage(status);
   }
 
   //TODO: Merge together as no need to differentiate them from a signal point of view
