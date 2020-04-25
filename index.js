@@ -147,6 +147,7 @@ window.isActive = () => {
 const { Errors, Message } = window.Signal.Types;
 const {
   upgradeMessageSchema,
+  loadAttachmentData,
   writeNewAttachmentData,
   deleteAttachmentData,
   doesAttachmentExist,
@@ -1238,32 +1239,150 @@ class SignalClient extends EventEmitter {
     await conversation.sendTypingMessage(status);
   }
 
-  //TODO: Merge together as no need to differentiate them from a signal point of view
-  async sendMessageToGroup(groupId, message, members, attachments = []) {
-    let timeStamp = await new Date().getTime();
-    let conversation = await ConversationController.getOrCreateAndWait(groupId, 'group');
-    await conversation.sendMessage(
-      message,
-      attachments,
-      null,           //quote
-      [],             //preview
-      null            //sticker
-    );
-    return {timestamp: timeStamp, numbers: members};
-  }
+  async sendMessage(conversationId, isGroup, body, attachments = []) {
+    
+    let quote = null;
+    let preview = [];
+    let sticker = null;
+    
+    let conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
+    let endMessage;
+  
+    
+    //FROM: conversation.js
+    const destination = conversation.get('uuid') || conversation.get('e164');
+    const expireTimer = conversation.get('expireTimer');
+    const recipients = conversation.getRecipients();
 
-  async sendMessage(phoneNumber, message, attachments = []) {
-    let timeStamp = await new Date().getTime();
-    let conversation = await ConversationController.getOrCreateAndWait(phoneNumber, 'private');
-    await conversation.sendMessage(
-      message,
-      attachments,
-      null,           //quote
-      [],             //preview
-      null            //sticker
+    let profileKey;
+    if (conversation.get('profileSharing')) {
+      profileKey = storage.get('profileKey');
+    }
+    //Removed async function call
+    
+    const now = Date.now();
+
+    window.log.info(
+      'Sending message to conversation',
+      conversation.idForLogging(),
+      'with timestamp',
+      now
     );
-    //TODO: remove need for number for mapping to be able to remove this
-    return {timestamp: timeStamp, numbers: phoneNumber};
+
+    // Here we move attachments to disk
+    const messageWithSchema = await upgradeMessageSchema({
+      type: 'outgoing',
+      body,
+      conversationId: conversation.id,
+      quote,
+      preview,
+      attachments,
+      sent_at: now,
+      received_at: now,
+      expireTimer,
+      recipients,
+      sticker,
+    });
+
+    if (conversation.isPrivate()) {
+      messageWithSchema.destination = destination;
+    }
+    const attributes = {
+      ...messageWithSchema,
+      id: window.getGuid(),
+    };
+
+    const model = conversation.addSingleMessage(attributes);
+    if (sticker) {
+      await addStickerPackReference(model.id, sticker.packId);
+    }
+    const message = MessageController.register(model.id, model);
+    await window.Signal.Data.saveMessage(message.attributes, {
+      forceSave: true,
+      Message: Whisper.Message,
+    });
+
+    conversation.set({
+      lastMessage: model.getNotificationText(),
+      lastMessageStatus: 'sending',
+      active_at: now,
+      timestamp: now,
+      isArchived: false,
+      draft: null,
+      draftTimestamp: null,
+    });
+    window.Signal.Data.updateConversation(conversation.id, conversation.attributes);
+    
+    //...
+
+    const attachmentsWithData = await Promise.all(
+      messageWithSchema.attachments.map(loadAttachmentData)
+    );
+
+    const {
+      body: messageBody,
+      attachments: finalAttachments,
+    } = Whisper.Message.getLongMessageAttachment({
+      body,
+      attachments: attachmentsWithData,
+      now,
+    });
+    // Special-case the self-send case - we send only a sync message
+    if (conversation.isMe()) {
+      const dataMessage = await textsecure.messaging.getMessageProto(
+        destination,
+        messageBody,
+        finalAttachments,
+        quote,
+        preview,
+        sticker,
+        null,
+        now,
+        expireTimer,
+        profileKey
+      );
+      endMessage = await message.sendSyncMessageOnly(dataMessage);
+    }
+
+    const conversationType = conversation.get('type');
+    const options = conversation.getSendOptions();
+    
+    
+    //Adapted
+    if(isGroup) {
+      endMessage = await textsecure.messaging.sendMessageToGroup(
+        conversation.get('groupId'),
+        conversation.getRecipients(),
+        messageBody,
+        finalAttachments,
+        quote,
+        preview,
+        sticker,
+        null,
+        now,
+        expireTimer,
+        profileKey,
+        options
+      );
+    }
+    else {
+      endMessage = await textsecure.messaging.sendMessageToIdentifier(
+        destination,
+        messageBody,
+        finalAttachments,
+        quote,
+        preview,
+        sticker,
+        null,
+        now,
+        expireTimer,
+        profileKey,
+        options
+      );
+    }
+    //ENDFROM
+    
+    return {timeStamp: now, recipients};
   }
 }
 
