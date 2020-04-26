@@ -1220,13 +1220,16 @@ Whisper.events.on('storage_ready', () => {
       // Proxy all the events to the client emitter
       [
         'message',
-        'sent',
-        'receipt',
+        'delivery',
         'contact',
         'group',
+        'sent',
+        'readSync',
         'read',
         'error',
-        'typing'
+        'configuration',
+        'typing',
+        'sticker-pack'
       ].forEach((type) => {
         messageReceiver.addEventListener(type, (...args) => {
           this.matrixEmitter.emit(type, ...args);
