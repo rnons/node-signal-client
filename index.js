@@ -1269,8 +1269,8 @@ class SignalClient extends EventEmitter {
       now
     );
 
-    // Here we move attachments to disk
-    const messageWithSchema = await upgradeMessageSchema({
+    //Adapted as we dont have window.document from electron
+    const messageWithSchema = {
       type: 'outgoing',
       body,
       conversationId: conversation.id,
@@ -1282,7 +1282,7 @@ class SignalClient extends EventEmitter {
       expireTimer,
       recipients,
       sticker,
-    });
+    };
 
     if (conversation.isPrivate()) {
       messageWithSchema.destination = destination;
