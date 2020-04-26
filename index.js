@@ -420,6 +420,42 @@ function onTyping(ev) {
   }
 }
 
+async function onStickerPack(ev) {
+  ev.confirm();
+
+  const packs = ev.stickerPacks || [];
+
+  packs.forEach(pack => {
+    const { id, key, isInstall, isRemove } = pack || {};
+
+    if (!id || !key || (!isInstall && !isRemove)) {
+      window.log.warn(
+        'Received malformed sticker pack operation sync message'
+      );
+      return;
+    }
+
+    const status = window.Signal.Stickers.getStickerPackStatus(id);
+
+    if (status === 'installed' && isRemove) {
+      window.reduxActions.stickers.uninstallStickerPack(id, key, {
+        fromSync: true,
+      });
+    } else if (isInstall) {
+      if (status === 'downloaded') {
+        window.reduxActions.stickers.installStickerPack(id, key, {
+          fromSync: true,
+        });
+      } else {
+        window.Signal.Stickers.downloadStickerPack(id, key, {
+          finalStatus: 'installed',
+          fromSync: true,
+        });
+      }
+    }
+  });
+}
+
 async function onContactReceived(ev) {
   const details = ev.contactDetails;
 
@@ -890,8 +926,6 @@ async function unlinkAndDisconnect() {
     messageReceiver = null;
   }
 
-  onEmpty();
-
   window.log.warn(
     'Client is no longer authorized; deleting local configuration'
   );
@@ -935,6 +969,186 @@ async function unlinkAndDisconnect() {
       eraseError && eraseError.stack ? eraseError.stack : eraseError
     );
   }
+}
+
+async function onError(ev) {
+  const { error } = ev;
+  window.log.error('background onError:', Errors.toLogFormat(error));
+
+  if (
+    error &&
+    error.name === 'HTTPError' &&
+    (error.code === 401 || error.code === 403)
+  ) {
+    await unlinkAndDisconnect();
+    return;
+  }
+
+  if (
+    error &&
+    error.name === 'HTTPError' &&
+    (error.code === -1 || error.code === 502)
+  ) {
+    // Failed to connect to server
+    if (navigator.onLine) {
+      window.log.info('retrying in 1 minute');
+      reconnectTimer = setTimeout(connect, 60000);
+
+      Whisper.events.trigger('reconnectTimer');
+    }
+    return;
+  }
+
+  if (ev.proto) {
+    if (error && error.name === 'MessageCounterError') {
+      if (ev.confirm) {
+        ev.confirm();
+      }
+      // Ignore this message. It is likely a duplicate delivery
+      // because the server lost our ack the first time.
+      return;
+    }
+    const envelope = ev.proto;
+    const message = await initIncomingMessage(envelope);
+
+    const conversationId = message.get('conversationId');
+    const conversation = await ConversationController.getOrCreateAndWait(
+      conversationId,
+      'private'
+    );
+
+    // This matches the queueing behavior used in Message.handleDataMessage
+    conversation.queueJob(async () => {
+      const existingMessage = await window.Signal.Data.getMessageBySender(
+        message.attributes,
+        {
+          Message: Whisper.Message,
+        }
+      );
+      if (existingMessage) {
+        ev.confirm();
+        window.log.warn(
+          `Got duplicate error for message ${message.idForLogging()}`
+        );
+        return;
+      }
+
+      const model = new Whisper.Message({
+        ...message.attributes,
+        id: window.getGuid(),
+      });
+      await model.saveErrors(error || new Error('Error was null'), {
+        skipSave: true,
+      });
+
+      MessageController.register(model.id, model);
+      await window.Signal.Data.saveMessage(model.attributes, {
+        Message: Whisper.Message,
+        forceSave: true,
+      });
+
+      conversation.set({
+        active_at: Date.now(),
+        unreadCount: conversation.get('unreadCount') + 1,
+      });
+
+      const conversationTimestamp = conversation.get('timestamp');
+      const messageTimestamp = model.get('timestamp');
+      if (
+        !conversationTimestamp ||
+        messageTimestamp > conversationTimestamp
+      ) {
+        conversation.set({ timestamp: model.get('sent_at') });
+      }
+
+      conversation.trigger('newmessage', model);
+      conversation.notify(model);
+
+      Whisper.events.trigger('incrementProgress');
+
+      if (ev.confirm) {
+        ev.confirm();
+      }
+
+      window.Signal.Data.updateConversation(
+        conversationId,
+        conversation.attributes
+      );
+    });
+  }
+
+  throw error;
+}
+
+function onReadReceipt(ev) {
+  const readAt = ev.timestamp;
+  const { timestamp } = ev.read;
+  const reader = ConversationController.getConversationId(ev.read.reader);
+  window.log.info('read receipt', reader, timestamp);
+
+  ev.confirm();
+
+  if (!storage.get('read-receipt-setting') || !reader) {
+    return;
+  }
+
+  const receipt = Whisper.ReadReceipts.add({
+    reader,
+    timestamp,
+    read_at: readAt,
+  });
+
+  // Note: We do not wait for completion here
+  Whisper.ReadReceipts.onReceipt(receipt);
+}
+
+function onReadSync(ev) {
+  const readAt = ev.timestamp;
+  const { timestamp } = ev.read;
+  const { sender, senderUuid } = ev.read;
+  window.log.info('read sync', sender, senderUuid, timestamp);
+
+  const receipt = Whisper.ReadSyncs.add({
+    sender,
+    senderUuid,
+    timestamp,
+    read_at: readAt,
+  });
+
+  receipt.on('remove', ev.confirm);
+
+  // Note: Here we wait, because we want read states to be in the database
+  //   before we move on.
+  return Whisper.ReadSyncs.onReceipt(receipt);
+}
+
+function onDeliveryReceipt(ev) {
+  const { deliveryReceipt } = ev;
+  const { sourceUuid, source } = deliveryReceipt;
+  const identifier = source || sourceUuid;
+
+  window.log.info(
+    'delivery receipt from',
+    `${identifier}.${deliveryReceipt.sourceDevice}`,
+    deliveryReceipt.timestamp
+  );
+
+  ev.confirm();
+
+  const deliveredTo = ConversationController.getConversationId(identifier);
+
+  if (!deliveredTo) {
+    window.log.info('no conversation for identifier', identifier);
+    return;
+  }
+
+  const receipt = Whisper.DeliveryReceipts.add({
+    timestamp: deliveryReceipt.timestamp,
+    deliveredTo,
+  });
+
+  // Note: We don't wait for completion here
+  Whisper.DeliveryReceipts.onReceipt(receipt);
 }
 
 Whisper.events.on('storage_ready', () => {
@@ -1020,11 +1234,16 @@ Whisper.events.on('storage_ready', () => {
       });
 
       this.matrixEmitter.on('message', onMessageReceived);
+      this.matrixEmitter.on('delivery', onDeliveryReceipt);
       this.matrixEmitter.on('contact', onContactReceived);
       this.matrixEmitter.on('group', onGroupReceived);
       this.matrixEmitter.on('sent', onSentMessage);
+      this.matrixEmitter.on('readSync', onReadSync);
+      this.matrixEmitter.on('read', onReadReceipt);
+      this.matrixEmitter.on('error', onError);
       this.matrixEmitter.on('configuration', onConfiguration);
       this.matrixEmitter.on('typing', onTyping);
+      this.matrixEmitter.on('sticker-pack', onStickerPack);
 
       
       //FROM: background.js
