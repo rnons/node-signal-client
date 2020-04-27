@@ -141,8 +141,7 @@ window.location = {
 }
 window.XMLHttpRequest = require('xhr2');
 window.moment = require('moment');
-const { default: PQueue } = require('p-queue');
-window.PQueue = PQueue;
+window.PQueue = require('p-queue').default
 window._ = require('underscore');
 window.Backbone = require('backbone');
 const jQuery = require('jquery-deferred');
