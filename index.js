@@ -1461,6 +1461,7 @@ class SignalClient extends EventEmitter {
     await conversation.sendTypingMessage(status);
   }
 
+
   async sendMessage(conversationId, isGroup, body, attachments = []) {
     
     let quote = null;
@@ -1469,9 +1470,18 @@ class SignalClient extends EventEmitter {
     
     let conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
     let endMessage;
-  
+    
     
     //FROM: conversation.js
+    //This is just conversation.sendMessage() with two things changed:
+    //the date is moved outside the queue job (we need it for read receipts)
+    //this. changed to conversation. 
+
+    conversation.clearTypingTimers();
+
+    const { clearUnreadMetrics } = window.reduxActions.conversations;
+    clearUnreadMetrics(conversation.id);
+
     const destination = conversation.get('uuid') || conversation.get('e164');
     const expireTimer = conversation.get('expireTimer');
     const recipients = conversation.getRecipients();
@@ -1480,129 +1490,151 @@ class SignalClient extends EventEmitter {
     if (conversation.get('profileSharing')) {
       profileKey = storage.get('profileKey');
     }
-    //Removed async function call
     
+    //Moved outside so we can use it for read receipts later
     const now = Date.now();
 
-    window.log.info(
-      'Sending message to conversation',
-      conversation.idForLogging(),
-      'with timestamp',
-      now
-    );
+    conversation.queueJob(async () => {
 
-    //Adapted as we dont have window.document from electron
-    const messageWithSchema = {
-      type: 'outgoing',
-      body,
-      conversationId: conversation.id,
-      quote,
-      preview,
-      attachments,
-      sent_at: now,
-      received_at: now,
-      expireTimer,
-      recipients,
-      sticker,
-    };
+      window.log.info(
+        'Sending message to conversation',
+        conversation.idForLogging(),
+        'with timestamp',
+        now
+      );
 
-    if (conversation.isPrivate()) {
-      messageWithSchema.destination = destination;
-    }
-    const attributes = {
-      ...messageWithSchema,
-      id: window.getGuid(),
-    };
-
-    const model = conversation.addSingleMessage(attributes);
-    if (sticker) {
-      await addStickerPackReference(model.id, sticker.packId);
-    }
-    const message = MessageController.register(model.id, model);
-    await window.Signal.Data.saveMessage(message.attributes, {
-      forceSave: true,
-      Message: Whisper.Message,
-    });
-
-    conversation.set({
-      lastMessage: model.getNotificationText(),
-      lastMessageStatus: 'sending',
-      active_at: now,
-      timestamp: now,
-      isArchived: false,
-      draft: null,
-      draftTimestamp: null,
-    });
-    window.Signal.Data.updateConversation(conversation.id, conversation.attributes);
-    
-    //...
-
-    const attachmentsWithData = await Promise.all(
-      messageWithSchema.attachments.map(loadAttachmentData)
-    );
-
-    const {
-      body: messageBody,
-      attachments: finalAttachments,
-    } = Whisper.Message.getLongMessageAttachment({
-      body,
-      attachments: attachmentsWithData,
-      now,
-    });
-    // Special-case the self-send case - we send only a sync message
-    if (conversation.isMe()) {
-      const dataMessage = await textsecure.messaging.getMessageProto(
-        destination,
-        messageBody,
-        finalAttachments,
+      // Here we move attachments to disk
+      const messageWithSchema = await upgradeMessageSchema({
+        type: 'outgoing',
+        body,
+        conversationId: conversation.id,
         quote,
         preview,
-        sticker,
-        null,
-        now,
+        attachments,
+        sent_at: now,
+        received_at: now,
         expireTimer,
-        profileKey
-      );
-      endMessage = await message.sendSyncMessageOnly(dataMessage);
-    }
+        recipients,
+        sticker,
+      });
 
-    const conversationType = conversation.get('type');
-    const options = conversation.getSendOptions();
-    
-    
-    //Adapted
-    if(isGroup) {
-      endMessage = await textsecure.messaging.sendMessageToGroup(
-        conversation.get('groupId'),
-        conversation.getRecipients(),
-        messageBody,
-        finalAttachments,
-        quote,
-        preview,
-        sticker,
-        null,
-        now,
-        expireTimer,
-        profileKey,
-        options
+      if (conversation.isPrivate()) {
+        messageWithSchema.destination = destination;
+      }
+      const attributes = {
+        ...messageWithSchema,
+        id: window.getGuid(),
+      };
+
+      const model = conversation.addSingleMessage(attributes);
+      if (sticker) {
+        await addStickerPackReference(model.id, sticker.packId);
+      }
+      const message = MessageController.register(model.id, model);
+      await window.Signal.Data.saveMessage(message.attributes, {
+        forceSave: true,
+        Message: Whisper.Message,
+      });
+
+      conversation.set({
+        lastMessage: model.getNotificationText(),
+        lastMessageStatus: 'sending',
+        active_at: now,
+        timestamp: now,
+        isArchived: false,
+        draft: null,
+        draftTimestamp: null,
+      });
+      window.Signal.Data.updateConversation(conversation.id, conversation.attributes);
+
+      // We're offline!
+      if (!textsecure.messaging) {
+        const errors = (conversation.contactCollection.length
+          ? conversation.contactCollection
+          : [this]
+        ).map(contact => {
+          const error = new Error('Network is not available');
+          error.name = 'SendMessageNetworkError';
+          error.identifier = contact.get('uuid') || contact.get('e164');
+          return error;
+        });
+        await message.saveErrors(errors);
+        return null;
+      }
+
+      const attachmentsWithData = await Promise.all(
+        messageWithSchema.attachments.map(loadAttachmentData)
       );
-    }
-    else {
-      endMessage = await textsecure.messaging.sendMessageToIdentifier(
-        destination,
-        messageBody,
-        finalAttachments,
-        quote,
-        preview,
-        sticker,
-        null,
+
+      const {
+        body: messageBody,
+        attachments: finalAttachments,
+      } = Whisper.Message.getLongMessageAttachment({
+        body,
+        attachments: attachmentsWithData,
         now,
-        expireTimer,
-        profileKey,
-        options
-      );
-    }
-    //ENDFROM
+      });
+
+      // Special-case the self-send case - we send only a sync message
+      if (conversation.isMe()) {
+        const dataMessage = await textsecure.messaging.getMessageProto(
+          destination,
+          messageBody,
+          finalAttachments,
+          quote,
+          preview,
+          sticker,
+          null,
+          now,
+          expireTimer,
+          profileKey
+        );
+        return message.sendSyncMessageOnly(dataMessage);
+      }
+
+      const conversationType = conversation.get('type');
+      const options = conversation.getSendOptions();
+
+      const promise = (() => {
+        switch (conversationType) {
+          case Message.PRIVATE:
+            return textsecure.messaging.sendMessageToIdentifier(
+              destination,
+              messageBody,
+              finalAttachments,
+              quote,
+              preview,
+              sticker,
+              null,
+              now,
+              expireTimer,
+              profileKey,
+              options
+            );
+          case Message.GROUP:
+            return textsecure.messaging.sendMessageToGroup(
+              conversation.get('groupId'),
+              conversation.getRecipients(),
+              messageBody,
+              finalAttachments,
+              quote,
+              preview,
+              sticker,
+              null,
+              now,
+              expireTimer,
+              profileKey,
+              options
+            );
+          default:
+            throw new TypeError(
+              `Invalid conversation type: '${conversationType}'`
+            );
+        }
+      })();
+
+      return message.send(conversation.wrapSend(promise));
+    });
     
     return {timeStamp: now, recipients};
   }
