@@ -27,7 +27,7 @@
     "signal-desktop": "witchent/Signal-Desktop#master",
     "underscore": "^1.10.2",
     "worker": "^0.4.0",
-    "ws": "^7.2.3",
+    "ws": "^7.2.5",
     "xhr2": "^0.2.0"
   }
 }
