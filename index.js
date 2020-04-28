@@ -1204,6 +1204,12 @@ Whisper.events.on('storage_ready', () => {
 
     //Redux actions are not needed for our use case but to stop warnings:
     //Adapted from background.js initializeRedux 
+    const dummyStore = {};
+    window.reduxStore = dummyStore;
+    dummyStore.getState = function() { return window.reduxStore; };
+    dummyStore.stickers = {};
+    dummyStore.stickers.packs = {};
+    
     const actions = {};
     window.reduxActions = actions;
     actions.conversations = {};
@@ -1215,6 +1221,9 @@ Whisper.events.on('storage_ready', () => {
     actions.user = {};
     actions.search = {};
     actions.stickers = {};
+    
+    //No errors in stickers
+    actions.stickers.stickerPackAdded = function() {};
     
     //Needed to be able to send messages:
     actions.conversations.clearUnreadMetrics = function() {};
