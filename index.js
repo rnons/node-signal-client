@@ -1476,6 +1476,11 @@ class SignalClient extends EventEmitter {
   syncContacts() {
     return textsecure.messaging.sendRequestContactSyncMessage(); 
   }
+  
+  async getProfileNameForPhoneNumber(phoneNumber) {
+    const conversation = await ConversationController.getOrCreateAndWait(phoneNumber, 'private');
+    return conversation.getProfileName();
+  }
 
   async downloadAttachment(attachment) {
     return messageReceiver.downloadAttachment(attachment);
