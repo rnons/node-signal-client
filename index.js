@@ -1477,8 +1477,8 @@ class SignalClient extends EventEmitter {
     return textsecure.messaging.sendRequestContactSyncMessage(); 
   }
   
-  async getProfileNameForPhoneNumber(phoneNumber) {
-    const conversation = await ConversationController.getOrCreateAndWait(phoneNumber, 'private');
+  async getProfileNameForId(conversationId) {
+    const conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
     return conversation.getProfileName();
   }
 
@@ -1524,15 +1524,18 @@ class SignalClient extends EventEmitter {
   }
 
 
-  async sendMessage(conversationId, isGroup, body, attachments = []) {
+  async sendMessage(conversationId, isGroup, body, attachments = [], quote = null) {
     
-    let quote = null;
     let preview = [];
     let sticker = null;
     
-    let conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
-    let endMessage;
-    
+    let conversation;
+    if (isGroup) {
+      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');      
+    }
+    else {
+      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
+    }
     
     //FROM: conversation.js
     //This is just conversation.sendMessage() with two things changed:
@@ -1656,7 +1659,7 @@ class SignalClient extends EventEmitter {
 
       const conversationType = conversation.get('type');
       const options = conversation.getSendOptions();
-
+      
       const promise = (() => {
         switch (conversationType) {
           case Message.PRIVATE:
@@ -1698,7 +1701,22 @@ class SignalClient extends EventEmitter {
       return message.send(conversation.wrapSend(promise));
     });
     
-    return {timeStamp: now, recipients};
+    //ENDFROM
+    
+    let members = [];
+    let conversationIndividual;
+    
+    if (isGroup) {
+      for (let i=0; i < recipients.length; ++i) {
+        conversationIndividual = await ConversationController.getOrCreateAndWait(recipients[i], 'group');
+        members.push(conversationIndividual.get('e164'));
+      }
+    }
+    else {
+      members.push(conversation.get('e164'));
+    }
+    
+    return {timeStamp: now, members};
   }
 }
 
