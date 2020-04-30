@@ -1523,6 +1523,30 @@ class SignalClient extends EventEmitter {
     }
   }
 
+    /**
+     * Sends a reaction message
+     * @param {object} reaction - The reaction to send
+     * @param {string} reaction.emoji - The emoji to react with
+     * @param {boolean} [reaction.remove] - Set to `true` if we are removing a
+     *   reaction with the given emoji
+     * @param {object} target - The target of the reaction
+     * @param {string} [target.targetAuthorE164] - The E164 address of the target
+     *   message's author
+     * @param {string} [target.targetAuthorUuid] - The UUID address of the target
+     *   message's author
+     * @param {number} target.targetTimestamp - The sent_at timestamp of the
+     *   target message
+     */
+  async sendReactionMessage(conversationId, isGroup, reaction, target) {
+    let conversation;
+    if (isGroup) {
+      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');      
+    }
+    else {
+      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
+    }
+    await conversation.sendReactionMessage(reaction, target);
+  }
 
   async sendMessage(conversationId, isGroup, body, finalizedAttachments = [], quote = null) {
     
