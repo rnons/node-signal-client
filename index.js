@@ -1524,10 +1524,12 @@ class SignalClient extends EventEmitter {
   }
 
 
-  async sendMessage(conversationId, isGroup, body, attachments = [], quote = null) {
+  async sendMessage(conversationId, isGroup, body, finalizedAttachments = [], quote = null) {
     
     let preview = [];
     let sticker = null;
+    //We start without attachments to prevent errors from spawning from not having electron running
+    let attachments = []
     
     let conversation;
     if (isGroup) {
@@ -1582,7 +1584,7 @@ class SignalClient extends EventEmitter {
         recipients,
         sticker,
       });
-
+      
       if (conversation.isPrivate()) {
         messageWithSchema.destination = destination;
       }
@@ -1631,7 +1633,8 @@ class SignalClient extends EventEmitter {
         messageWithSchema.attachments.map(loadAttachmentData)
       );
 
-      const {
+      //Adapted to replace finalAttachments by our attachments
+      let {
         body: messageBody,
         attachments: finalAttachments,
       } = Whisper.Message.getLongMessageAttachment({
@@ -1639,6 +1642,7 @@ class SignalClient extends EventEmitter {
         attachments: attachmentsWithData,
         now,
       });
+      finalAttachments = finalizedAttachments;
 
       // Special-case the self-send case - we send only a sync message
       if (conversation.isMe()) {
