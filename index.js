@@ -1376,6 +1376,7 @@ Whisper.events.on('storage_ready', () => {
       });
       Whisper.ExpiringMessagesListener.init(Whisper.events);
       
+      Whisper.deliveryReceiptQueue.start();
     })();
 
     window.document = {};
