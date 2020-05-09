@@ -292,7 +292,6 @@ dcodeIO.ByteBuffer = require('bytebuffer');
 signalRequire('js/reliable_trigger');
 signalRequire('js/database');
 signalRequire('js/storage');
-Whisper.events.trigger('storage_ready');
 
 signalRequire('js/signal_protocol_store');
 signalRequire('js/libtextsecure');
@@ -1377,6 +1376,8 @@ Whisper.events.on('storage_ready', () => {
       Whisper.ExpiringMessagesListener.init(Whisper.events);
       
       Whisper.deliveryReceiptQueue.start();
+      this.matrixEmitter.emit( 'client_ready' );
+      
     })();
 
     window.document = {};
