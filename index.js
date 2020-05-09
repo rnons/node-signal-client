@@ -1194,7 +1194,6 @@ function onDeliveryReceipt(ev) {
 Whisper.events.on('storage_ready', () => {
   
   if(this.link) {
-    window.document = {};
     return getAccountManager().registerSecondDevice(
       (url) => qrcode.generate(url),
       () => Promise.resolve(this.clientName)
@@ -1380,8 +1379,6 @@ Whisper.events.on('storage_ready', () => {
       
     })();
 
-    window.document = {};
-
     return Promise.resolve(this.matrixEmitter);
   }
 });
@@ -1411,6 +1408,8 @@ async function getStorageReady() {
   }
   await sqlChannels.initialize();
 //ENDFROM
+  
+  window.document = {};
   
   window.log.info('Storage fetch');
   await storage.fetch();
@@ -1487,6 +1486,19 @@ class SignalClient extends EventEmitter {
   async downloadAttachment(attachment) {
     return messageReceiver.downloadAttachment(attachment);
   }
+  
+  async getPathForAvatar(conversationId, isGroup) {
+    let conversation;
+    if (isGroup) {
+      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');
+    }
+    else { 
+      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
+    }
+    
+    return await conversation.getAvatarPath();
+  }
+    
 
   /**
    * mark messages as read in your signal clients
