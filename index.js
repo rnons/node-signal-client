@@ -1499,7 +1499,11 @@ class SignalClient extends EventEmitter {
     return await conversation.getAvatarPath();
   }
     
-
+  async leaveGroup(conversationId) {
+    let conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');
+    conversation.leaveGroup();
+  }
+    
   /**
    * mark messages as read in your signal clients
    */
