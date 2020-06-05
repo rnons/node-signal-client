@@ -82,11 +82,15 @@ window.updateTrayIcon = window.updateTrayIcon = unreadCount => "";
 
 //...
 
-const { initialize: initializeWebAPI } = signalRequire('js/modules/web_api');
+window.textsecure = signalRequire('ts/textsecure').default;
 
-window.WebAPI = initializeWebAPI({
+//adapted
+window.WebAPI = window.textsecure.WebAPI.initialize({
   url: config.serverUrl,
-  cdnUrl: config.cdnUrl,
+  cdnUrlObject: {
+    '0': config.cdn['0'],
+    '2': config.cdn['2'],
+  },
   certificateAuthority: auth,
   contentProxyUrl: "http://contentproxy.signal.org:443",
   proxyUrl: config.proxyUrl,
@@ -320,7 +324,7 @@ signalRequire('js/wall_clock_listener');
 signalRequire('js/rotate_signed_prekey_listener');
 signalRequire('js/keychange_listener');
 
-window.sql = signalRequire('app/sql');
+window.sql = signalRequire('ts/sql/Server').default;
 window.sqlChannels = signalRequire('app/sql_channel');
 
 let Model = Backbone.Model.extend({
