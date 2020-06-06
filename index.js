@@ -1333,6 +1333,9 @@ Whisper.events.on('storage_ready', () => {
     actions.conversations.clearUnreadMetrics = function() {};
     actions.conversations.messagesAdded = function() {};
     
+    //Otherwise we get errors in deleting messages
+    actions.conversations.messageDeleted = function() {};
+    
     //This is so we can wait for everything as otherwise the async functions end to fast
     //This screws everything up as e.g. the uuid is not loaded before continuing
     (async() => {
