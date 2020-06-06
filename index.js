@@ -67,16 +67,19 @@ const packageJson = signalRequire('package.json');
 config.version = packageJson.version;
 
 //FROM: preload.js
+window.platform = process.platform;
 window.getTitle = () => "";
 window.getEnvironment = () => config.environment;
 window.getAppInstance = () => config.appInstance;
 window.getVersion = () => config.version;
-window.isImportMode = () => config.importMode;
 window.getExpiration = () => config.buildExpiration;
 window.getNodeVersion = () => config.node_version;
 window.getHostName = () => config.hostname;
 window.getServerTrustRoot = () => config.serverTrustRoot;
+window.getServerPublicParams = () => config.serverPublicParams;
 window.isBehindProxy = () => Boolean(config.proxyUrl);
+
+//Added
 window.setBadgeCount = count => "";
 window.updateTrayIcon = window.updateTrayIcon = unreadCount => "";
 
@@ -299,7 +302,6 @@ signalRequire('js/storage');
 
 signalRequire('js/signal_protocol_store');
 signalRequire('js/libtextsecure');
-
 signalRequire('js/delivery_receipts');
 signalRequire('js/read_receipts');
 signalRequire('js/read_syncs');
@@ -323,6 +325,8 @@ signalRequire('js/reactions');
 signalRequire('js/wall_clock_listener');
 signalRequire('js/rotate_signed_prekey_listener');
 signalRequire('js/keychange_listener');
+
+signalRequire('js/deletes');
 
 window.sql = signalRequire('ts/sql/Server').default;
 window.sqlChannels = signalRequire('app/sql_channel');
@@ -624,7 +628,7 @@ async function onContactReceived(ev) {
         identityKey: verified.identityKey.toArrayBuffer(),
       };
       verifiedEvent.viaContactSync = true;
-//         await onVerified(verifiedEvent);
+        await onVerified(verifiedEvent);
     }
 
 //       const { appView } = window.owsDesktopApp;
@@ -773,56 +777,70 @@ async function handleMessageReceivedProfileUpdate({
 // Note: We do very little in this function, since everything in handleDataMessage is
 //   inside a conversation-specific queue(). Any code here might run before an earlier
 //   message is processed in handleDataMessage().
-async function onMessageReceived(event) {
-  const { data, confirm } = event;
+function onMessageReceived(event) {
+    const { data, confirm } = event;
 
-  const messageDescriptor = getDescriptorForReceived(data);
+    const messageDescriptor = getDescriptorForReceived(data);
 
-  const { PROFILE_KEY_UPDATE } = textsecure.protobuf.DataMessage.Flags;
-  // eslint-disable-next-line no-bitwise
-  const isProfileUpdate = Boolean(data.message.flags & PROFILE_KEY_UPDATE);
-  if (isProfileUpdate) {
-    await handleMessageReceivedProfileUpdate({
-      data,
-      confirm,
-      messageDescriptor,
-    });
-    return;
-  }
-
-  const message = await initIncomingMessage(data);
-
-  const result = await ConversationController.getOrCreateAndWait(
-    messageDescriptor.id,
-    messageDescriptor.type
-  );
-
-  if (messageDescriptor.type === 'private') {
-    result.updateE164(data.source);
-    if (data.sourceUuid) {
-      result.updateUuid(data.sourceUuid);
+    const { PROFILE_KEY_UPDATE } = textsecure.protobuf.DataMessage.Flags;
+    // eslint-disable-next-line no-bitwise
+    const isProfileUpdate = Boolean(data.message.flags & PROFILE_KEY_UPDATE);
+    if (isProfileUpdate) {
+        return handleMessageReceivedProfileUpdate({
+        data,
+        confirm,
+        messageDescriptor,
+        });
     }
-  }
 
-  if (data.message.reaction) {
-    const { reaction } = data.message;
-    const reactionModel = Whisper.Reactions.add({
-      emoji: reaction.emoji,
-      remove: reaction.remove,
-      targetAuthorE164: reaction.targetAuthorE164,
-      targetAuthorUuid: reaction.targetAuthorUuid,
-      targetTimestamp: reaction.targetTimestamp.toNumber(),
-      timestamp: Date.now(),
-      fromId: data.source || data.sourceUuid,
-    });
-    // Note: We do not wait for completion here
-    Whisper.Reactions.onReaction(reactionModel);
-    confirm();
-    return;
-  }
+    const message = initIncomingMessage(data);
 
-  // Don't wait for handleDataMessage, as it has its own per-conversation queueing
-  message.handleDataMessage(data.message, event.confirm);
+    const result = ConversationController.getOrCreate(
+        messageDescriptor.id,
+        messageDescriptor.type
+    );
+
+    if (messageDescriptor.type === 'private') {
+        result.updateE164(data.source);
+        if (data.sourceUuid) {
+        result.updateUuid(data.sourceUuid);
+        }
+    }
+
+    if (data.message.reaction) {
+        const { reaction } = data.message;
+        const reactionModel = Whisper.Reactions.add({
+        emoji: reaction.emoji,
+        remove: reaction.remove,
+        targetAuthorE164: reaction.targetAuthorE164,
+        targetAuthorUuid: reaction.targetAuthorUuid,
+        targetTimestamp: reaction.targetTimestamp.toNumber(),
+        timestamp: Date.now(),
+        fromId: data.source || data.sourceUuid,
+        });
+        // Note: We do not wait for completion here
+        Whisper.Reactions.onReaction(reactionModel);
+        confirm();
+        return Promise.resolve();
+    }
+
+    if (data.message.delete) {
+        const { delete: del } = data.message;
+        const deleteModel = Whisper.Deletes.add({
+        targetSentTimestamp: del.targetSentTimestamp,
+        serverTimestamp: data.serverTimestamp,
+        fromId: data.source || data.sourceUuid,
+        });
+        // Note: We do not wait for completion here
+        Whisper.Deletes.onDelete(deleteModel);
+        confirm();
+        return Promise.resolve();
+    }
+
+    // Don't wait for handleDataMessage, as it has its own per-conversation queueing
+    message.handleDataMessage(data.message, event.confirm);
+
+    return Promise.resolve();
 }
 
 async function handleMessageSentProfileUpdate({
@@ -886,76 +904,93 @@ function createSentMessage(data) {
   });
 }
 
+
 // Note: We do very little in this function, since everything in handleDataMessage is
 //   inside a conversation-specific queue(). Any code here might run before an earlier
 //   message is processed in handleDataMessage().
-async function onSentMessage(event) {
-  const { data, confirm } = event;
+function onSentMessage(event) {
+    const { data, confirm } = event;
 
-  const messageDescriptor = getDescriptorForSent(data);
+    const messageDescriptor = getDescriptorForSent(data);
 
-  const { PROFILE_KEY_UPDATE } = textsecure.protobuf.DataMessage.Flags;
-  // eslint-disable-next-line no-bitwise
-  const isProfileUpdate = Boolean(data.message.flags & PROFILE_KEY_UPDATE);
-  if (isProfileUpdate) {
-    await handleMessageSentProfileUpdate({
-      data,
-      confirm,
-      messageDescriptor,
-    });
-    return;
-  }
+    const { PROFILE_KEY_UPDATE } = textsecure.protobuf.DataMessage.Flags;
+    // eslint-disable-next-line no-bitwise
+    const isProfileUpdate = Boolean(data.message.flags & PROFILE_KEY_UPDATE);
+    if (isProfileUpdate) {
+        return handleMessageSentProfileUpdate({
+        data,
+        confirm,
+        messageDescriptor,
+        });
+    }
 
-  const message = await createSentMessage(data);
+    const message = createSentMessage(data);
 
-  if (data.message.reaction) {
-    const { reaction } = data.message;
     const ourNumber = textsecure.storage.user.getNumber();
     const ourUuid = textsecure.storage.user.getUuid();
-    const reactionModel = Whisper.Reactions.add({
-      emoji: reaction.emoji,
-      remove: reaction.remove,
-      targetAuthorE164: reaction.targetAuthorE164,
-      targetAuthorUuid: reaction.targetAuthorUuid,
-      targetTimestamp: reaction.targetTimestamp.toNumber(),
-      timestamp: Date.now(),
-      fromId: ourNumber || ourUuid,
-      fromSync: true,
+
+    if (data.message.reaction) {
+        const { reaction } = data.message;
+        const reactionModel = Whisper.Reactions.add({
+        emoji: reaction.emoji,
+        remove: reaction.remove,
+        targetAuthorE164: reaction.targetAuthorE164,
+        targetAuthorUuid: reaction.targetAuthorUuid,
+        targetTimestamp: reaction.targetTimestamp.toNumber(),
+        timestamp: Date.now(),
+        fromId: ourNumber || ourUuid,
+        fromSync: true,
+        });
+        // Note: We do not wait for completion here
+        Whisper.Reactions.onReaction(reactionModel);
+
+        event.confirm();
+        return Promise.resolve();
+    }
+
+    if (data.message.delete) {
+        const { delete: del } = data.message;
+        const deleteModel = Whisper.Deletes.add({
+        targetSentTimestamp: del.targetSentTimestamp,
+        serverTimestamp: del.serverTimestamp,
+        fromId: ourNumber || ourUuid,
+        });
+        // Note: We do not wait for completion here
+        Whisper.Deletes.onDelete(deleteModel);
+        confirm();
+        return Promise.resolve();
+    }
+
+    ConversationController.getOrCreate(
+        messageDescriptor.id,
+        messageDescriptor.type
+    );
+    // Don't wait for handleDataMessage, as it has its own per-conversation queueing
+
+    message.handleDataMessage(data.message, event.confirm, {
+        data,
     });
-    // Note: We do not wait for completion here
-    Whisper.Reactions.onReaction(reactionModel);
 
-    event.confirm();
-    return;
-  }
-
-  await ConversationController.getOrCreateAndWait(
-    messageDescriptor.id,
-    messageDescriptor.type
-  );
-  // Don't wait for handleDataMessage, as it has its own per-conversation queueing
-
-  message.handleDataMessage(data.message, event.confirm, {
-    data,
-  });
+    return Promise.resolve();
 }
 
-async function initIncomingMessage(data) {
-  const targetId = data.source || data.sourceUuid;
-  const conversation = ConversationController.get(targetId);
-  const conversationId = conversation ? conversation.id : targetId;
+function initIncomingMessage(data) {
+    const targetId = data.source || data.sourceUuid;
+    const conversation = ConversationController.get(targetId);
+    const conversationId = conversation ? conversation.id : targetId;
 
-  return new Whisper.Message({
-    source: data.source,
-    sourceUuid: data.sourceUuid,
-    sourceDevice: data.sourceDevice,
-    sent_at: data.timestamp,
-    received_at: data.receivedAt || Date.now(),
-    conversationId,
-    unidentifiedDeliveryReceived: data.unidentifiedDeliveryReceived,
-    type: 'incoming',
-    unread: 1,
-  });
+    return new Whisper.Message({
+        source: data.source,
+        sourceUuid: data.sourceUuid,
+        sourceDevice: data.sourceDevice,
+        sent_at: data.timestamp,
+        serverTimestamp: data.serverTimestamp,
+        received_at: Date.now(),
+        conversationId,
+        unidentifiedDeliveryReceived: data.unidentifiedDeliveryReceived,
+        type: 'incoming',
+        unread: 1,
+    });
 }
 
 async function unlinkAndDisconnect() {
@@ -1015,114 +1050,112 @@ async function unlinkAndDisconnect() {
   }
 }
 
-async function onError(ev) {
-  const { error } = ev;
-  window.log.error('background onError:', Errors.toLogFormat(error));
+function onError(ev) {
+    const { error } = ev;
+    window.log.error('background onError:', Errors.toLogFormat(error));
 
-  if (
-    error &&
-    error.name === 'HTTPError' &&
-    (error.code === 401 || error.code === 403)
-  ) {
-    await unlinkAndDisconnect();
-    return;
-  }
-
-  if (
-    error &&
-    error.name === 'HTTPError' &&
-    (error.code === -1 || error.code === 502)
-  ) {
-    // Failed to connect to server
-    if (navigator.onLine) {
-      window.log.info('retrying in 1 minute');
-      reconnectTimer = setTimeout(connect, 60000);
-
-      Whisper.events.trigger('reconnectTimer');
+    if (
+        error &&
+        error.name === 'HTTPError' &&
+        (error.code === 401 || error.code === 403)
+    ) {
+        return unlinkAndDisconnect();
     }
-    return;
-  }
 
-  if (ev.proto) {
-    if (error && error.name === 'MessageCounterError') {
-      if (ev.confirm) {
-        ev.confirm();
-      }
-      // Ignore this message. It is likely a duplicate delivery
-      // because the server lost our ack the first time.
-      return;
-    }
-    const envelope = ev.proto;
-    const message = await initIncomingMessage(envelope);
+    if (
+        error &&
+        error.name === 'HTTPError' &&
+        (error.code === -1 || error.code === 502)
+    ) {
+        // Failed to connect to server
+        if (navigator.onLine) {
+        window.log.info('retrying in 1 minute');
+        reconnectTimer = setTimeout(connect, 60000);
 
-    const conversationId = message.get('conversationId');
-    const conversation = await ConversationController.getOrCreateAndWait(
-      conversationId,
-      'private'
-    );
-
-    // This matches the queueing behavior used in Message.handleDataMessage
-    conversation.queueJob(async () => {
-      const existingMessage = await window.Signal.Data.getMessageBySender(
-        message.attributes,
-        {
-          Message: Whisper.Message,
+        Whisper.events.trigger('reconnectTimer');
         }
-      );
-      if (existingMessage) {
-        ev.confirm();
-        window.log.warn(
-          `Got duplicate error for message ${message.idForLogging()}`
-        );
-        return;
-      }
+        return Promise.resolve();
+    }
 
-      const model = new Whisper.Message({
-        ...message.attributes,
-        id: window.getGuid(),
-      });
-      await model.saveErrors(error || new Error('Error was null'), {
-        skipSave: true,
-      });
+    if (ev.proto) {
+        if (error && error.name === 'MessageCounterError') {
+        if (ev.confirm) {
+            ev.confirm();
+        }
+        // Ignore this message. It is likely a duplicate delivery
+        // because the server lost our ack the first time.
+        return Promise.resolve();
+        }
+        const envelope = ev.proto;
+        const message = initIncomingMessage(envelope);
 
-      MessageController.register(model.id, model);
-      await window.Signal.Data.saveMessage(model.attributes, {
-        Message: Whisper.Message,
-        forceSave: true,
-      });
-
-      conversation.set({
-        active_at: Date.now(),
-        unreadCount: conversation.get('unreadCount') + 1,
-      });
-
-      const conversationTimestamp = conversation.get('timestamp');
-      const messageTimestamp = model.get('timestamp');
-      if (
-        !conversationTimestamp ||
-        messageTimestamp > conversationTimestamp
-      ) {
-        conversation.set({ timestamp: model.get('sent_at') });
-      }
-
-      conversation.trigger('newmessage', model);
-      conversation.notify(model);
-
-      Whisper.events.trigger('incrementProgress');
-
-      if (ev.confirm) {
-        ev.confirm();
-      }
-
-      window.Signal.Data.updateConversation(
+        const conversationId = message.get('conversationId');
+        const conversation = ConversationController.getOrCreate(
         conversationId,
-        conversation.attributes
-      );
-    });
-  }
+        'private'
+        );
 
-  throw error;
+        // This matches the queueing behavior used in Message.handleDataMessage
+        conversation.queueJob(async () => {
+        const existingMessage = await window.Signal.Data.getMessageBySender(
+            message.attributes,
+            {
+            Message: Whisper.Message,
+            }
+        );
+        if (existingMessage) {
+            ev.confirm();
+            window.log.warn(
+            `Got duplicate error for message ${message.idForLogging()}`
+            );
+            return;
+        }
+
+        const model = new Whisper.Message({
+            ...message.attributes,
+            id: window.getGuid(),
+        });
+        await model.saveErrors(error || new Error('Error was null'), {
+            skipSave: true,
+        });
+
+        MessageController.register(model.id, model);
+        await window.Signal.Data.saveMessage(model.attributes, {
+            Message: Whisper.Message,
+            forceSave: true,
+        });
+
+        conversation.set({
+            active_at: Date.now(),
+            unreadCount: conversation.get('unreadCount') + 1,
+        });
+
+        const conversationTimestamp = conversation.get('timestamp');
+        const messageTimestamp = model.get('timestamp');
+        if (
+            !conversationTimestamp ||
+            messageTimestamp > conversationTimestamp
+        ) {
+            conversation.set({ timestamp: model.get('sent_at') });
+        }
+
+        conversation.trigger('newmessage', model);
+        conversation.notify(model);
+
+        Whisper.events.trigger('incrementProgress');
+
+        if (ev.confirm) {
+            ev.confirm();
+        }
+
+        window.Signal.Data.updateConversation(conversation.attributes);
+        });
+    }
+
+    throw error;
 }
+
+//onViewSync
 
 function onReadReceipt(ev) {
   const readAt = ev.timestamp;
@@ -1166,6 +1199,73 @@ function onReadSync(ev) {
   return Whisper.ReadSyncs.onReceipt(receipt);
 }
 
+async function onVerified(ev) {
+    const e164 = ev.verified.destination;
+    const uuid = ev.verified.destinationUuid;
+    const key = ev.verified.identityKey;
+    let state;
+
+    if (ev.confirm) {
+        ev.confirm();
+    }
+
+    const c = new Whisper.Conversation({
+        e164,
+        uuid,
+        type: 'private',
+    });
+    const error = c.validate();
+    if (error) {
+        window.log.error(
+        'Invalid verified sync received:',
+        e164,
+        uuid,
+        Errors.toLogFormat(error)
+        );
+        return;
+    }
+
+    switch (ev.verified.state) {
+        case textsecure.protobuf.Verified.State.DEFAULT:
+        state = 'DEFAULT';
+        break;
+        case textsecure.protobuf.Verified.State.VERIFIED:
+        state = 'VERIFIED';
+        break;
+        case textsecure.protobuf.Verified.State.UNVERIFIED:
+        state = 'UNVERIFIED';
+        break;
+        default:
+        window.log.error(`Got unexpected verified state: ${ev.verified.state}`);
+    }
+
+    window.log.info(
+        'got verified sync for',
+        e164,
+        uuid,
+        state,
+        ev.viaContactSync ? 'via contact sync' : ''
+    );
+
+    const contact = await ConversationController.getOrCreateAndWait(
+        e164 || uuid,
+        'private'
+    );
+    const options = {
+        viaSyncMessage: true,
+        viaContactSync: ev.viaContactSync,
+        key,
+    };
+
+    if (state === 'VERIFIED') {
+        await contact.setVerified(options);
+    } else if (state === 'DEFAULT') {
+        await contact.setVerifiedDefault(options);
+    } else {
+        await contact.setUnverified(options);
+    }
+}
+
 function onDeliveryReceipt(ev) {
   const { deliveryReceipt } = ev;
   const { sourceUuid, source } = deliveryReceipt;
@@ -1194,6 +1294,8 @@ function onDeliveryReceipt(ev) {
   // Note: We don't wait for completion here
   Whisper.DeliveryReceipts.onReceipt(receipt);
 }
+
+//ENDFROM
 
 Whisper.events.on('storage_ready', () => {
   
@@ -1278,6 +1380,7 @@ Whisper.events.on('storage_ready', () => {
         'sent',
         'readSync',
         'read',
+        'verified',
         'error',
         'configuration',
         'typing',
@@ -1295,6 +1398,7 @@ Whisper.events.on('storage_ready', () => {
       this.matrixEmitter.on('sent', onSentMessage);
       this.matrixEmitter.on('readSync', onReadSync);
       this.matrixEmitter.on('read', onReadReceipt);
+      this.matrixEmitter.on('verified', onVerified);
       this.matrixEmitter.on('error', onError);
       this.matrixEmitter.on('configuration', onConfiguration);
       this.matrixEmitter.on('typing', onTyping);
@@ -1369,6 +1473,8 @@ Whisper.events.on('storage_ready', () => {
         }
       }
       
+      //ENDFROM
+      
       Whisper.RotateSignedPreKeyListener.init(Whisper.events);
       window.Signal.RefreshSenderCertificate.initialize({
         events: Whisper.events,
@@ -1399,6 +1505,7 @@ async function getStorageReady() {
     keyStore.put('key', key);
   }
 
+  //Adapted
   const sqlInitPromise = sql.initialize({
     configDir: process.cwd() + '/data/',
     key,
