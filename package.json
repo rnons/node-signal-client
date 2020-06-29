@@ -17,17 +17,17 @@
     "bluebird": "^3.7.2",
     "bytebuffer": "^5.0.1",
     "electron-builder": "22.5.1",
-    "indexeddbshim": "^6.1.0",
+    "indexeddbshim": "^6.6.0",
     "jquery-deferred": "^0.3.1",
     "mkdirp": "^1.0.4",
-    "moment": "^2.24.0",
-    "node-persist": "^3.0.5",
+    "moment": "^2.27.0",
+    "node-persist": "^3.1.0",
     "node-webcrypto-ossl": "1.0.49",
     "qrcode-terminal": "^0.12.0",
-    "signal-desktop": "witchent/Signal-Desktop#dfa935f",
+    "signal-desktop": "witchent/Signal-Desktop#78611fb",
     "underscore": "^1.10.2",
     "worker": "^0.4.0",
-    "ws": "^7.2.5",
+    "ws": "^7.3.0",
     "xhr2": "^0.2.0"
   }
 }
