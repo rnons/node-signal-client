@@ -339,7 +339,6 @@ let Item = Model.extend({
 });
 
 //FROM: background.js
-let connectCount = 0;
 let initialLoadComplete = false;
 
 //...
@@ -1297,8 +1296,9 @@ function onDeliveryReceipt(ev) {
 
 //ENDFROM
 
-Whisper.events.on('storage_ready', () => {
-  
+//TODO: Adapt to add start() to the mix instead of directly connect
+
+Whisper.events.on('storage_ready', () => {  
   if(this.link) {
     return getAccountManager().registerSecondDevice(
       (url) => qrcode.generate(url),
@@ -1336,165 +1336,181 @@ Whisper.events.on('storage_ready', () => {
     //Otherwise we get errors in deleting messages
     actions.conversations.messageDeleted = function() {};
     
-    //This is so we can wait for everything as otherwise the async functions end to fast
-    //This screws everything up as e.g. the uuid is not loaded before continuing
-    (async() => {
-      //FROM: background.js
-      //Async function connect()
-      if (messageReceiver) {
-        await messageReceiver.stopProcessing();
+  
+    Whisper.RotateSignedPreKeyListener.init(Whisper.events);
+    window.Signal.RefreshSenderCertificate.initialize({
+      events: Whisper.events,
+      storage,
+      navigator,
+      logger: window.log,
+    });
+    Whisper.ExpiringMessagesListener.init(Whisper.events);
+  
+    connect(true);    
 
-        await window.waitForAllBatchers();
-        messageReceiver.unregisterBatchers();
-
-        messageReceiver = null;
-      }
-
-      const OLD_USERNAME = storage.get('number_id');
-      const USERNAME = storage.get('uuid_id');
-      const PASSWORD = storage.get('password');
-      const mySignalingKey = storage.get('signaling_key');
-
-      connectCount += 1;
-      const options = {
-        retryCached: connectCount === 1,
-        serverTrustRoot: window.getServerTrustRoot(),
-      };
-      
-      //...
-
-      // initialize the socket and start listening for messages
-      window.log.info('Initializing socket and listening for messages');
-      messageReceiver = new textsecure.MessageReceiver(
-        OLD_USERNAME,
-        USERNAME,
-        PASSWORD,
-        mySignalingKey,
-        options
-      );
-      //ENDFROM
-      
-      // Proxy all the events to the client emitter
-      [
-        'message',
-        'delivery',
-        'contact',
-        'group',
-        'sent',
-        'readSync',
-        'read',
-        'verified',
-        'error',
-        'configuration',
-        'typing',
-        'sticker-pack'
-      ].forEach((type) => {
-        messageReceiver.addEventListener(type, (...args) => {
-          this.matrixEmitter.emit(type, ...args);
-        });
-      });
-
-      this.matrixEmitter.on('message', onMessageReceived);
-      this.matrixEmitter.on('delivery', onDeliveryReceipt);
-      this.matrixEmitter.on('contact', onContactReceived);
-      this.matrixEmitter.on('group', onGroupReceived);
-      this.matrixEmitter.on('sent', onSentMessage);
-      this.matrixEmitter.on('readSync', onReadSync);
-      this.matrixEmitter.on('read', onReadReceipt);
-      this.matrixEmitter.on('verified', onVerified);
-      this.matrixEmitter.on('error', onError);
-      this.matrixEmitter.on('configuration', onConfiguration);
-      this.matrixEmitter.on('typing', onTyping);
-      this.matrixEmitter.on('sticker-pack', onStickerPack);
-
-      
-      //FROM: background.js
-      window.textsecure.messaging = new textsecure.MessageSender(
-        USERNAME || OLD_USERNAME,
-        PASSWORD
-      );
-      
-      //...
-      const udSupportKey = 'hasRegisterSupportForUnauthenticatedDelivery';
-      if (!storage.get(udSupportKey)) {
-        const server = WebAPI.connect({
-          username: USERNAME || OLD_USERNAME,
-          password: PASSWORD,
-        });
-        try {
-          await server.registerSupportForUnauthenticatedDelivery();
-          storage.put(udSupportKey, true);
-        } catch (error) {
-          window.log.error(
-            'Error: Unable to register for unauthenticated delivery support.',
-            error && error.stack ? error.stack : error
-          );
-        }
-      }
-
-      const hasRegisteredUuidSupportKey = 'hasRegisteredUuidSupport';
-      if (
-        !storage.get(hasRegisteredUuidSupportKey) &&
-        textsecure.storage.user.getUuid()
-      ) {
-        const server = WebAPI.connect({
-          username: USERNAME || OLD_USERNAME,
-          password: PASSWORD,
-        });
-        try {
-          await server.registerCapabilities({ uuid: true });
-          storage.put(hasRegisteredUuidSupportKey, true);
-        } catch (error) {
-          window.log.error(
-            'Error: Unable to register support for UUID messages.',
-            error && error.stack ? error.stack : error
-          );
-        }
-      }
-
-      const deviceId = textsecure.storage.user.getDeviceId();
-
-      if (!textsecure.storage.user.getUuid()) {
-        const server = WebAPI.connect({
-          username: OLD_USERNAME,
-          password: PASSWORD,
-        });
-        try {
-          const { uuid } = await server.whoami();
-          textsecure.storage.user.setUuidAndDeviceId(uuid, deviceId);
-          const ourNumber = textsecure.storage.user.getNumber();
-          const me = await ConversationController.getOrCreateAndWait(
-            ourNumber,
-            'private'
-          );
-          me.updateUuid(uuid);
-        } catch (error) {
-          window.log.error(
-            'Error: Unable to retrieve UUID from service.',
-            error && error.stack ? error.stack : error
-          );
-        }
-      }
-      
-      //ENDFROM
-      
-      Whisper.RotateSignedPreKeyListener.init(Whisper.events);
-      window.Signal.RefreshSenderCertificate.initialize({
-        events: Whisper.events,
-        storage,
-        navigator,
-        logger: window.log,
-      });
-      Whisper.ExpiringMessagesListener.init(Whisper.events);
-      
-      Whisper.deliveryReceiptQueue.start();
-      this.matrixEmitter.emit( 'client_ready' );
-      
-    })();
-
-    return Promise.resolve(this.matrixEmitter);
+    return Promise.resolve(window.matrixEmitter);
   }
 });
+    
+
+let reconnectTimer = null;
+
+//FROM: background.js   
+let connectCount = 0;
+async function connect(firstRun) {
+  window.log.info('connect', { firstRun, connectCount });
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  //...
+  if (messageReceiver) {
+    await messageReceiver.stopProcessing();
+
+    await window.waitForAllBatchers();
+    messageReceiver.unregisterBatchers();
+
+    messageReceiver = null;
+  }
+
+  const OLD_USERNAME = storage.get('number_id');
+  const USERNAME = storage.get('uuid_id');
+  const PASSWORD = storage.get('password');
+  const mySignalingKey = storage.get('signaling_key');
+
+  connectCount += 1;
+  const options = {
+    retryCached: connectCount === 1,
+    serverTrustRoot: window.getServerTrustRoot(),
+  };
+  
+  Whisper.deliveryReceiptQueue.pause(); // avoid flood of delivery receipts until we catch up
+//     Whisper.Notifications.disable(); // avoid notification flood until empty
+
+  // initialize the socket and start listening for messages
+  window.log.info('Initializing socket and listening for messages');
+  messageReceiver = new textsecure.MessageReceiver(
+    OLD_USERNAME,
+    USERNAME,
+    PASSWORD,
+    mySignalingKey,
+    options
+  );
+  
+// Use matrixEmitter instead, only listen to useful events
+  // Proxy all the events to the client emitter
+  [
+  'message',
+  'delivery',
+  'contact',
+  'group',
+  'sent',
+  'readSync',
+  'read',
+  'verified',
+  'error',
+  'configuration',
+  'typing',
+  'sticker-pack'
+  ].forEach((type) => {
+    messageReceiver.addEventListener(type, (...args) => {
+      window.matrixEmitter.emit(type, ...args);
+    });
+  });
+
+  window.matrixEmitter.on('message', onMessageReceived);
+  window.matrixEmitter.on('delivery', onDeliveryReceipt);
+  window.matrixEmitter.on('contact', onContactReceived);
+  window.matrixEmitter.on('group', onGroupReceived);
+  window.matrixEmitter.on('sent', onSentMessage);
+  window.matrixEmitter.on('readSync', onReadSync);
+  window.matrixEmitter.on('read', onReadReceipt);
+  window.matrixEmitter.on('verified', onVerified);
+  window.matrixEmitter.on('error', onError);
+  window.matrixEmitter.on('configuration', onConfiguration);
+  window.matrixEmitter.on('typing', onTyping);
+  window.matrixEmitter.on('sticker-pack', onStickerPack);
+
+  
+  window.Signal.AttachmentDownloads.start({
+    getMessageReceiver: () => messageReceiver,
+    logger: window.log,
+  });
+
+  window.textsecure.messaging = new textsecure.MessageSender(
+  USERNAME || OLD_USERNAME,
+  PASSWORD
+  );
+  
+  //...
+  const udSupportKey = 'hasRegisterSupportForUnauthenticatedDelivery';
+  if (!storage.get(udSupportKey)) {
+    const server = WebAPI.connect({
+      username: USERNAME || OLD_USERNAME,
+      password: PASSWORD,
+    });
+    try {
+      await server.registerSupportForUnauthenticatedDelivery();
+      storage.put(udSupportKey, true);
+    } catch (error) {
+      window.log.error(
+        'Error: Unable to register for unauthenticated delivery support.',
+        error && error.stack ? error.stack : error
+      );
+    }
+  }
+
+  const hasRegisteredUuidSupportKey = 'hasRegisteredUuidSupport';
+  if (
+    !storage.get(hasRegisteredUuidSupportKey) &&
+    textsecure.storage.user.getUuid()
+  ) {
+    const server = WebAPI.connect({
+      username: USERNAME || OLD_USERNAME,
+      password: PASSWORD,
+    });
+    try {
+      await server.registerCapabilities({ uuid: true });
+      storage.put(hasRegisteredUuidSupportKey, true);
+    } catch (error) {
+      window.log.error(
+      'Error: Unable to register support for UUID messages.',
+      error && error.stack ? error.stack : error
+      );
+    }
+  }
+
+  const deviceId = textsecure.storage.user.getDeviceId();
+
+  if (!textsecure.storage.user.getUuid()) {
+    const server = WebAPI.connect({
+      username: OLD_USERNAME,
+      password: PASSWORD,
+    });
+    try {
+      const { uuid } = await server.whoami();
+      textsecure.storage.user.setUuidAndDeviceId(uuid, deviceId);
+      const ourNumber = textsecure.storage.user.getNumber();
+      const me = await ConversationController.getOrCreateAndWait(
+      ourNumber,
+      'private'
+      );
+      me.updateUuid(uuid);
+    } catch (error) {
+      window.log.error(
+      'Error: Unable to retrieve UUID from service.',
+      error && error.stack ? error.stack : error
+      );
+    }
+  }
+  
+  //ENDFROM
+  
+  Whisper.deliveryReceiptQueue.start();
+  window.matrixEmitter.emit( 'client_ready' );
+};
 
 async function getStorageReady() {
   let key = keyStore.get('key');
@@ -1547,7 +1563,7 @@ const startSequence = (clientName, matrixEmitter) => {
 
   this.clientName = clientName;
   this.link = false;
-  this.matrixEmitter = matrixEmitter;
+  window.matrixEmitter = matrixEmitter;
   getStorageReady();
 
   const link = () => {
