@@ -93,18 +93,18 @@ window.updateTrayIcon = window.updateTrayIcon = unreadCount => "";
 window.textsecure = signalRequire('ts/textsecure').default;
 
 //adapted
-  window.WebAPI = window.textsecure.WebAPI.initialize({
-    url: config.serverUrl,
-    storageUrl: config.storageUrl,
-    cdnUrlObject: {
-      '0': config.cdn['0'],
-      '2': config.cdn['2'],
-    },
-    certificateAuthority: config.certificateAuthority,
-    contentProxyUrl: config.contentProxyUrl,
-    proxyUrl: config.proxyUrl,
-    version: config.version,
-  });
+window.WebAPI = window.textsecure.WebAPI.initialize({
+  url: config.serverUrl,
+  storageUrl: config.storageUrl,
+  cdnUrlObject: {
+    '0': config.cdn['0'],
+    '2': config.cdn['2'],
+  },
+  certificateAuthority: config.certificateAuthority,
+  contentProxyUrl: config.contentProxyUrl,
+  proxyUrl: config.proxyUrl,
+  version: config.version,
+});
 
 //...
 
@@ -339,8 +339,6 @@ signalRequire('js/expiring_tap_to_view_messages');
 
 signalRequire('js/chromium');
 signalRequire('ts/util/registration');
-//  signalRequire('js/expire');
-signalRequire('js/conversation_controller');
 signalRequire('js/message_controller');
 signalRequire('js/reactions');
 
@@ -1720,6 +1718,15 @@ async function getStorageReady() {
   
   window.log.info('Storage fetch');
   await storage.fetch();
+  
+//FROM background.js
+  await window.Signal.conversationControllerStart();
+
+  // We start this up before ConversationController.load() to ensure that our feature
+  //   flags are represented in the cached props we generate on load of each convo.
+  await window.Signal.RemoteConfig.initRemoteConfig();
+  
+//ENDFROM
   try {
     await Promise.all([
       ConversationController.load(),
