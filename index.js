@@ -1720,12 +1720,7 @@ async function getStorageReady() {
   await storage.fetch();
   
 //FROM background.js
-  await window.Signal.conversationControllerStart();
-
-  // We start this up before ConversationController.load() to ensure that our feature
-  //   flags are represented in the cached props we generate on load of each convo.
-  await window.Signal.RemoteConfig.initRemoteConfig();
-  
+  await window.Signal.conversationControllerStart();  
 //ENDFROM
   try {
     await Promise.all([
