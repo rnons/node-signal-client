@@ -1905,7 +1905,7 @@ class SignalClient extends EventEmitter {
     const { clearUnreadMetrics } = window.reduxActions.conversations;
     clearUnreadMetrics(conversation.id);
 
-    const destination = this.getSendTarget();
+    const destination = conversation.getSendTarget();
     const expireTimer = conversation.get('expireTimer');
     const recipients = conversation.getRecipients();
 
