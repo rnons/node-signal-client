@@ -181,12 +181,52 @@ window.btoa = function (str) {
   return new Buffer(str).toString('base64');
 };
 
+//Dummy parts so we don't get errors
 window.Whisper = {};
 Whisper.Notifications = {};
 Whisper.Notifications.remove = () => undefined;
 Whisper.Notifications.where = () => undefined;
 Whisper.Notifications.findWhere = () => undefined;
 Whisper.events = _.clone(Backbone.Events);
+
+//Redux actions are not needed for our use case but to stop warnings:
+//Adapted from background.js initializeRedux 
+window.reduxStore = {};
+reduxStore.getState = function() { return window.reduxStore; };
+reduxStore.stickers = {};
+reduxStore.stickers.packs = {};
+
+window.reduxActions = {};
+reduxActions.calling = {};
+reduxActions.conversations = {};
+reduxActions.emojis = {};
+reduxActions.expiration = {};
+reduxActions.items = {};
+reduxActions.network = {};
+reduxActions.updates = {};
+reduxActions.user = {};
+reduxActions.search = {};
+reduxActions.stickers = {};
+
+//No errors in stickers
+reduxActions.stickers.stickerPackAdded = function() {};
+
+//Needed to be able to send messages:
+reduxActions.conversations.clearUnreadMetrics = function() {};
+reduxActions.conversations.messagesAdded = function() {};
+
+//Otherwise we get errors in deleting messages
+reduxActions.conversations.messageDeleted = function() {};
+
+//Getting a call should not give errors
+window.Signal.Services.calling = {};
+//We want to inform that we got a call (which signal ignored)
+window.Signal.Services.calling.handleCallingMessage = function(envelope, callingMessage) { 
+  //Only do it once for when the call came in (only then it has a callId
+  if (callingMessage.offer != null && callingMessage.offer.callId != null) {
+    window.matrixEmitter.emit('call', envelope, callingMessage);
+  }
+};
 
 
 //FROM: background.js
@@ -1466,41 +1506,8 @@ Whisper.events.on('storage_ready', () => {
       (url) => qrcode.generate(url),
       () => Promise.resolve(this.clientName)
     );
-  } else {
-
-    //Redux actions are not needed for our use case but to stop warnings:
-    //Adapted from background.js initializeRedux 
-    const dummyStore = {};
-    window.reduxStore = dummyStore;
-    dummyStore.getState = function() { return window.reduxStore; };
-    dummyStore.stickers = {};
-    dummyStore.stickers.packs = {};
-    
-    const actions = {};
-    window.reduxActions = actions;
-    actions.calling = {};
-    actions.conversations = {};
-    actions.emojis = {};
-    actions.expiration = {};
-    actions.items = {};
-    actions.network = {};
-    actions.updates = {};
-    actions.user = {};
-    actions.search = {};
-    actions.stickers = {};
-    
-    //No errors in stickers
-    actions.stickers.stickerPackAdded = function() {};
-    
-    //Needed to be able to send messages:
-    actions.conversations.clearUnreadMetrics = function() {};
-    actions.conversations.messagesAdded = function() {};
-    
-    //Otherwise we get errors in deleting messages
-    actions.conversations.messageDeleted = function() {};
-    
-  
-    // Start listeners here, after we get through our queue.
+  } else {    
+    // Start listeners here
     Whisper.RotateSignedPreKeyListener.init(Whisper.events, newVersion);
     window.Signal.RefreshSenderCertificate.initialize({
       events: Whisper.events,
