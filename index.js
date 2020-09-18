@@ -175,7 +175,7 @@ window.FileReader = function () {
 }
 
 const setGlobalIndexedDbShimVars = require('indexeddbshim');
-setGlobalIndexedDbShimVars(); // 
+setGlobalIndexedDbShimVars(); //
 
 window.btoa = function (str) {
   return new Buffer(str).toString('base64');
@@ -190,7 +190,7 @@ Whisper.Notifications.findWhere = () => undefined;
 Whisper.events = _.clone(Backbone.Events);
 
 //Redux actions are not needed for our use case but to stop warnings:
-//Adapted from background.js initializeRedux 
+//Adapted from background.js initializeRedux
 window.reduxStore = {};
 reduxStore.getState = function() { return window.reduxStore; };
 reduxStore.stickers = {};
@@ -221,7 +221,7 @@ reduxActions.conversations.messageDeleted = function() {};
 //Getting a call should not give errors
 window.Signal.Services.calling = {};
 //We want to inform that we got a call (which signal ignored)
-window.Signal.Services.calling.handleCallingMessage = function(envelope, callingMessage) { 
+window.Signal.Services.calling.handleCallingMessage = function(envelope, callingMessage) {
   //Only do it once for when the call came in (only then it has a callId
   if (callingMessage.offer != null && callingMessage.offer.callId != null) {
     window.matrixEmitter.emit('call', envelope, callingMessage);
@@ -341,8 +341,10 @@ window.getGuid = require('uuid/v4');
 
 window.addEventListener = Whisper.events.on;
 
-const WebCrypto = require("node-webcrypto-ossl");
-window.crypto = new WebCrypto();
+// const WebCrypto = require("node-webcrypto-ossl");
+// window.crypto = new WebCrypto();
+const { Crypto } = require("@peculiar/webcrypto");
+window.crypto = new Crypto();
 
 window.dcodeIO = {}
 dcodeIO.Long = signalRequire('components/long/dist/Long');
@@ -1500,13 +1502,13 @@ function onDeliveryReceipt(ev) {
 
 //TODO: Adapt to add start() to the mix instead of directly connect
 
-Whisper.events.on('storage_ready', () => {  
+Whisper.events.on('storage_ready', () => {
   if(this.link) {
     return getAccountManager().registerSecondDevice(
       (url) => qrcode.generate(url),
       () => Promise.resolve(this.clientName)
     );
-  } else {    
+  } else {
     // Start listeners here
     Whisper.RotateSignedPreKeyListener.init(Whisper.events, newVersion);
     window.Signal.RefreshSenderCertificate.initialize({
@@ -1516,17 +1518,17 @@ Whisper.events.on('storage_ready', () => {
       logger: window.log,
     });
     Whisper.ExpiringMessagesListener.init(Whisper.events);
-  
-    connect(true);    
+
+    connect(true);
 
     return Promise.resolve(window.matrixEmitter);
   }
 });
-    
+
 
 let reconnectTimer = null;
 
-//FROM: background.js   
+//FROM: background.js
 let connectCount = 0;
 async function connect(firstRun) {
   window.log.info('connect', { firstRun, connectCount });
@@ -1556,7 +1558,7 @@ async function connect(firstRun) {
     retryCached: connectCount === 1,
     serverTrustRoot: window.getServerTrustRoot(),
   };
-  
+
   Whisper.deliveryReceiptQueue.pause(); // avoid flood of delivery receipts until we catch up
 //     Whisper.Notifications.disable(); // avoid notification flood until empty
 
@@ -1569,7 +1571,7 @@ async function connect(firstRun) {
     mySignalingKey,
     options
   );
-  
+
 // Use matrixEmitter instead, only listen to useful events
   // Proxy all the events to the client emitter
   [
@@ -1612,7 +1614,7 @@ async function connect(firstRun) {
   window.matrixEmitter.on('fetchLatest', onFetchLatestSync);
   window.matrixEmitter.on('keys', onKeysSync);
 
-  
+
   window.Signal.AttachmentDownloads.start({
     getMessageReceiver: () => messageReceiver,
     logger: window.log,
@@ -1622,7 +1624,7 @@ async function connect(firstRun) {
   USERNAME || OLD_USERNAME,
   PASSWORD
   );
-  
+
   //...
   const udSupportKey = 'hasRegisterSupportForUnauthenticatedDelivery';
   if (!storage.get(udSupportKey)) {
@@ -1685,9 +1687,9 @@ async function connect(firstRun) {
       );
     }
   }
-  
+
   //ENDFROM
-  
+
   Whisper.deliveryReceiptQueue.start();
   window.matrixEmitter.emit( 'client_ready' );
 };
@@ -1710,7 +1712,7 @@ async function getStorageReady() {
     key,
     messages: {},
   });
-  
+
   //...
   const success = await sqlInitPromise;
 
@@ -1720,14 +1722,14 @@ async function getStorageReady() {
   }
   await sqlChannels.initialize();
 //ENDFROM
-  
+
   window.document = {};
-  
+
   window.log.info('Storage fetch');
   await storage.fetch();
-  
+
 //FROM background.js
-  await window.Signal.conversationControllerStart();  
+  await window.Signal.conversationControllerStart();
 //ENDFROM
   try {
     await Promise.all([
@@ -1791,9 +1793,9 @@ class SignalClient extends EventEmitter {
   }
 
   syncContacts() {
-    return textsecure.messaging.sendRequestContactSyncMessage(); 
+    return textsecure.messaging.sendRequestContactSyncMessage();
   }
-  
+
   async getProfileNameForId(conversationId) {
     const conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
     return conversation.getProfileName();
@@ -1802,24 +1804,24 @@ class SignalClient extends EventEmitter {
   async downloadAttachment(attachment) {
     return messageReceiver.downloadAttachment(attachment);
   }
-  
+
   async getPathForAvatar(conversationId, isGroup) {
     let conversation;
     if (isGroup) {
       conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');
     }
-    else { 
+    else {
       conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
     }
-    
+
     return await conversation.getAvatarPath();
   }
-    
+
   async leaveGroup(conversationId) {
     let conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');
     conversation.leaveGroup();
   }
-    
+
   /**
    * mark messages as read in your signal clients
    */
@@ -1830,10 +1832,10 @@ class SignalClient extends EventEmitter {
       if (isGroup) {
         conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');
       }
-      else { 
+      else {
         conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
       }
-      
+
       await conversation.markRead(timeStamp, {sendReadReceipts: sendReceipts, readAt: timeStamp });
     }
   }
@@ -1849,10 +1851,10 @@ class SignalClient extends EventEmitter {
       if (isGroup) {
         conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');
       }
-      else { 
+      else {
         conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
       }
-      
+
       await conversation.sendTypingMessage(status);
     }
   }
@@ -1874,7 +1876,7 @@ class SignalClient extends EventEmitter {
   async sendReactionMessage(conversationId, isGroup, reaction, target) {
     let conversation;
     if (isGroup) {
-      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');      
+      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');
     }
     else {
       conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
@@ -1883,24 +1885,24 @@ class SignalClient extends EventEmitter {
   }
 
   async sendMessage(conversationId, isGroup, body, finalizedAttachments = [], quote = null) {
-    
+
     let preview = [];
     let sticker = null;
     //We start without attachments to prevent errors from spawning from not having electron running
     let attachments = []
-    
+
     let conversation;
     if (isGroup) {
-      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');      
+      conversation = await ConversationController.getOrCreateAndWait(conversationId, 'group');
     }
     else {
       conversation = await ConversationController.getOrCreateAndWait(conversationId, 'private');
     }
-    
+
     //FROM: conversation.js
     //This is just conversation.sendMessage() with two things changed:
     //the date is moved outside the queue job (we need it for read receipts)
-    //this. changed to conversation. 
+    //this. changed to conversation.
 
     conversation.clearTypingTimers();
 
@@ -1915,7 +1917,7 @@ class SignalClient extends EventEmitter {
     if (conversation.get('profileSharing')) {
       profileKey = storage.get('profileKey');
     }
-    
+
     //Moved outside so we can use it for read receipts later
     const now = Date.now();
 
@@ -1942,7 +1944,7 @@ class SignalClient extends EventEmitter {
         recipients,
         sticker,
       });
-      
+
       if (conversation.isPrivate()) {
         messageWithSchema.destination = destination;
       }
@@ -2022,7 +2024,7 @@ class SignalClient extends EventEmitter {
 
       const conversationType = conversation.get('type');
       const options = conversation.getSendOptions();
-      
+
       const promise = (() => {
         switch (conversationType) {
           case Message.PRIVATE:
@@ -2063,12 +2065,12 @@ class SignalClient extends EventEmitter {
 
       return message.send(conversation.wrapSend(promise));
     });
-    
+
     //ENDFROM
-    
+
     let members = [];
     let conversationIndividual;
-    
+
     if (isGroup) {
       for (let i=0; i < recipients.length; ++i) {
         conversationIndividual = await ConversationController.getOrCreateAndWait(recipients[i], 'group');
@@ -2078,7 +2080,7 @@ class SignalClient extends EventEmitter {
     else {
       members.push(conversation.get('e164'));
     }
-    
+
     return {timeStamp: now, members};
   }
 }
